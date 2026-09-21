@@ -1,9 +1,49 @@
-# CS3268
-Bank Account Fraud Detection
+# CS3268 Track 1 — Does Fixing Fairness Remove Bias, or Just Move It?
+
+Bank account opening fraud detection on the BAF dataset, with fairness fixes (reweighing, group thresholds, ExponentiatedGradient) audited by TreeSHAP for age-proxy relocation.
+
+Team: Yekai (data, baseline, integration) · Chloe (fairness metrics and fixes) · Jianrong (interpretability audit) · Sze Ling (report, figures, slides)
+
+---
+
+## Setup (do this once)
+
+1. Open Google Drive → **Shared with me** → right-click `CS3268` → **Organize → Add shortcut** → choose **My Drive**. Keep the name exactly `CS3268`. Without this, the paths below will not work on your account.
+2. In any Colab notebook, run:
+
+```python
+from google.colab import drive; drive.mount('/content/drive')
+import sys; sys.path.append('/content/drive/MyDrive/CS3268/src')
+from common import load_split, features, threshold_at_fpr, save_preds
+```
+
+3. Check it works:
+
+```python
+tr = load_split("train")
+print(len(tr), tr["month"].unique())   # expect 675666, [0 1 2 3 4]
+print(features(tr).shape)              # expect (675666, 30)
+```
+
+---
+
+## Folder layout
+
+Data and outputs live in Google Drive (`MyDrive/CS3268/`). Code lives in this GitHub repo. Never commit `.csv` or `.parquet` files.
+
+| Folder | Contents | Who writes |
+|---|---|---|
+| `data/` | `base.parquet`, `variant2.parquet` | Yekai only, once |
+| `preds/` | `preds_<model>.parquet`, one per model | Whoever owns that model |
+| `models/` | Saved models (`<model>.json`) | Whoever owns that model |
+| `src/` | `common.py` (shared helpers) | Yekai only |
+| `notebooks/` | One notebook per person per stream | Owner only |
+
+---
 
 ## Data
 
-Source: Bank Account Fraud (BAF) suite, NeurIPS 2022 (Kaggle: sgpjesus/bank-account-fraud-dataset-neurips-2022).
+Source: Bank Account Fraud (BAF) suite, NeurIPS 2022 (Kaggle: `sgpjesus/bank-account-fraud-dataset-neurips-2022`).
 Stored in Drive: `data/base.parquet` (primary) and `data/variant2.parquet` (robustness check only).
 Each file: 1,000,000 rows, 34 columns = 31 original + `id` (row index) + `age_group` (1 if customer_age >= 50) + categoricals cast to category dtype.
 
@@ -16,6 +56,8 @@ Each file: 1,000,000 rows, 34 columns = 31 original + `id` (row index) + `age_gr
 | test | 6–7 | 205,011 | 20.5% | 1.40% |
 
 The fraud rate rises over time. The 5% FPR cutoff is set on honest applicants in val only, so it is unaffected, but precision on test will differ from val.
+
+Use val for all tuning and threshold choices. Touch test only for final reported numbers.
 
 ### Protected attribute
 
@@ -49,3 +91,38 @@ Linear models (e.g. practice logistic regression): for the six missing-coded col
 ### Model inputs
 
 All columns except `id`, `fraud_bool` (label), `month`, `age_group`. `customer_age` stays IN — fairness fixes act on weights and thresholds, never by dropping age. Use `features(df)` from `src/common.py`.
+
+Categorical columns (`payment_type`, `employment_status`, `housing_status`, `source`, `device_os`) are stored as category dtype; use XGBoost with `enable_categorical=True`.
+
+---
+
+## Predictions file (the handoff contract)
+
+Every model produces one file, `preds/preds_<model>.parquet`, written with `save_preds()`. Everything downstream (metrics, SHAP comparisons, plots) reads these files, so nobody needs anyone else's code.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | int | Row id, matches `data/*.parquet` |
+| `month` | int | 5 = val, 6–7 = test |
+| `y_true` | int | 1 = fraud |
+| `age_group` | int | 1 = 50-plus |
+| `score` | float | Model's fraud probability (0–1) |
+| `decision` | int | 1 = flagged, after applying the cutoff |
+
+Rows: val and test only (months 5–7).
+
+Model names: `baseline`, `reweigh`, `groupthr`, `expgrad`. Sweep variants add a suffix, e.g. `reweigh_s0.5`.
+
+Cutoff: set with `threshold_at_fpr(val_scores, val_y, fpr=0.05)` so that 5% of honest val applicants are flagged. Group thresholds pass a dict `{0: cutoff_under50, 1: cutoff_50plus}` to `save_preds()`.
+
+---
+
+## Rules
+
+- **Seed 42** everywhere (`random_state=42`, `np.random.seed(42)`).
+- **Edit only your own notebook.** Shared code changes go through Yekai.
+- **Never overwrite someone else's file** in `preds/` or `models/`.
+- **The proxy set is frozen** in `proxy_set.json` by a dated commit before any fairness fix runs. Do not edit it afterwards.
+- **Test data is for final numbers only.** No tuning or threshold choices on months 6–7.
+- **Record new dependencies** in `requirements.txt`.
+- **Code freeze: Sun 1 Nov.** No new experiments after that date.
