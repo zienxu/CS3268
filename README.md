@@ -2,7 +2,7 @@
 
 Bank account opening fraud detection on the BAF dataset, with fairness fixes (reweighing, group thresholds, ExponentiatedGradient) audited by TreeSHAP for age-proxy relocation.
 
-Team: Yekai (data, baseline, integration) · Chloe (fairness metrics and fixes) · Jianrong (interpretability audit) · Sze Ling (report, figures, slides)
+Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes) · Jianrong (interpretability audit) · Sze Ling (report, figures, slides)
 
 ---
 
