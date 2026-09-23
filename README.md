@@ -33,10 +33,10 @@ Data and outputs live in Google Drive (`MyDrive/CS3268/`). Code lives in this Gi
 
 | Folder | Contents | Who writes |
 |---|---|---|
-| `data/` | `base.parquet`, `variant2.parquet` | Yekai only, once |
+| `data/` | `base.parquet`, `variant2.parquet` | Zien Xu only, once |
 | `preds/` | `preds_<model>.parquet`, one per model | Whoever owns that model |
 | `models/` | Saved models (`<model>.json`) | Whoever owns that model |
-| `src/` | `common.py` (shared helpers) | Yekai only |
+| `src/` | `common.py` (shared helpers) | Zien Xu only |
 | `notebooks/` | One notebook per person per stream | Owner only |
 
 ---
@@ -117,12 +117,67 @@ Cutoff: set with `threshold_at_fpr(val_scores, val_y, fpr=0.05)` so that 5% of h
 
 ---
 
+## Baseline (W1, done 22 Sep)
+
+Notebook: `notebooks/01_baseline.py` · Outputs: `models/baseline.json`, `models/baseline_grid.csv`, `preds/preds_baseline.parquet`
+
+### Model
+
+XGBoost, `tree_method="hist"`, `enable_categorical=True`, seed 42. Tuned with a 12-point grid (max_depth × learning_rate × min_child_weight), early stopping on val PR-AUC, selected by **recall at 5% FPR on val**.
+
+```python
+BEST_PARAMS = dict(n_estimators=232, max_depth=4, learning_rate=0.1,
+                   min_child_weight=10, subsample=0.8, colsample_bytree=0.8)
+```
+
+`n_estimators` is now FIXED at the best iteration. Every fairness fix trains the same-sized model via `train_model()` — no early stopping downstream, so differences come from the intervention and not from model size.
+
+The top five grid configurations spanned recall 0.5443–0.5478, a range of ~5 fraudsters out of ~1,400 in val — well inside sampling noise (±~1.3pp SE). Selection among them does not affect conclusions; state this in the report.
+
+### Overall performance
+
+| Split | FPR | Recall | n |
+|---|---|---|---|
+| val (month 5) | 0.0500 | 0.5478 | 119,323 |
+| test (months 6–7) | 0.0622 | 0.5893 | 205,011 |
+
+Val FPR is 5.00% by construction (the cutoff is set there). **Test FPR is 6.22%** — the fixed cutoff flags ~24% more honest applicants than promised on unseen months. Honest applicants score higher in later months, i.e. distribution shift, not the rising fraud rate (FPR is computed on honest rows only). Test recall rises for the same reason. Report per-group test FPR for every intervention, not just val.
+
+### Fairness gap (the finding the project is built on)
+
+group 0 = under 50, group 1 = 50-plus.
+
+| Split | Group | FPR | Recall | n |
+|---|---|---|---|---|
+| val | 0 | 0.0368 | 0.4601 | 98,598 |
+| val | 1 | 0.1135 | 0.7234 | 20,725 |
+| test | 0 | 0.0465 | 0.5109 | 171,232 |
+| test | 1 | 0.1431 | 0.7391 | 33,779 |
+
+**FPR ratio (lower/higher) = 0.32 on val, 0.33 on test.** Parity would be 1.0. Honest 50-plus applicants are ~3x more likely to be wrongly rejected than honest under-50s, and the gap is stable across splits.
+
+50-plus applicants are ~17% of applicants but ~39% of honest applicants wrongly rejected (approximate — Chloe's bootstrap figures supersede this).
+
+The model also catches more 50-plus fraud (0.72 vs 0.46 recall): it treats "older" as riskier across the board, which tracks the 2.34% vs 0.83% fraud-rate difference in the data. Higher base rates explain the direction of the gap; they do not justify it, since FPR is measured only on innocent people. Per Chouldechova (2017) and Kleinberg et al. (2016), equal calibration and equal error rates cannot both hold when group base rates differ — our interventions trade the latter for the former, and the trade-off curves quantify the cost.
+
+**Checkpoint (Sun 4 Oct): PASSED.** The gap is large and stable; we stay on Base. Variant II remains a robustness check only.
+
+---
+
 ## Rules
 
 - **Seed 42** everywhere (`random_state=42`, `np.random.seed(42)`).
-- **Edit only your own notebook.** Shared code changes go through Yekai.
+- **Edit only your own notebook.** Shared code changes go through Zien Xu.
 - **Never overwrite someone else's file** in `preds/` or `models/`.
 - **The proxy set is frozen** in `proxy_set.json` by a dated commit before any fairness fix runs. Do not edit it afterwards.
 - **Test data is for final numbers only.** No tuning or threshold choices on months 6–7.
 - **Record new dependencies** in `requirements.txt`.
 - **Code freeze: Sun 1 Nov.** No new experiments after that date.
+- **`BEST_PARAMS` is frozen.** All interventions call `train_model()` with it. Do not re-tune per intervention.
+- **Model selection rule was fixed in advance**: highest recall at 5% FPR on val. Do not switch to a different criterion after seeing results.
+
+## Method notes for the report
+
+- The val month (5) is used for three things: early stopping, hyperparameter selection, and cutoff selection. Test months (6–7) are untouched until final numbers. Say this explicitly in Method so it does not read as an oversight.
+- Cutoffs are always set on val and applied unchanged to test, mirroring how a bank sets a policy on past data and applies it to new applicants.
+- Test FPR drifting above the 5% target is a reportable finding about distribution shift, not a bug.
