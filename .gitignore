@@ -1,2 +1,6 @@
 *.csv
 *.parquet
+*.json
+.ipynb_checkpoints/
+!models/baseline_grid.csv
+!models/proxy_set.json
