@@ -1,0 +1,7 @@
+   xgboost>=2.0
+   fairlearn
+   pandas
+   pyarrow
+   scikit-learn
+   matplotlib
+   shap
