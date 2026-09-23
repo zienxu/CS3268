@@ -13,7 +13,7 @@ Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes
 
 ```python
 from google.colab import drive; drive.mount('/content/drive')
-import sys; sys.path.append('/content/drive/MyDrive/CS3268/src')
+import sys; sys.path.append('/content/drive/MyDrive/CS3268_Project/src')
 from common import load_split, features, threshold_at_fpr, save_preds
 ```
 
