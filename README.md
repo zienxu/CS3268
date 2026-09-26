@@ -164,6 +164,60 @@ The model also catches more 50-plus fraud (0.72 vs 0.46 recall): it treats "olde
 
 ---
 
+## Intervention 1: ExponentiatedGradient (W2, run 23 Sep) — PRELIMINARY
+ 
+Notebook: `notebooks/02_expgrad.py` · Outputs: `preds/preds_expgrad.parquet`, `models/expgrad_components/`, `models/expgrad_weights.csv`
+ 
+Status: **one configuration only (`difference_bound=0.01`). Do not write this up as a final result until the bound sweep is done** — see "Open question" below.
+ 
+### Setup
+ 
+Fairlearn's implementation of the reductions approach of Agarwal et al. [3], with a `FalsePositiveRateParity` constraint, `max_iter=40`, on the full training months (no subsampling needed: ~40s per inner fit, ~30 min total).
+ 
+**Base estimator is wrapped (`FixedFPRXGB`).** The reduction enforces the constraint on each inner estimator's `predict()`. XGBoost's `predict()` fires at probability 0.5; at 1.1% prevalence almost nothing crosses 0.5, so every component would predict "not fraud", both groups would show ~0% FPR, and the constraint would be satisfied trivially by a model that flags nobody. The wrapper makes `predict()` fire at the 5% FPR operating point instead, so the constraint is enforced where decisions are actually made. This is a deviation from the textbook reduction and must be stated in Method.
+ 
+**Scoring the mixture.** ExpGrad returns ~40 predictors plus weights. `eg.predict()` samples one at random (not reproducible); `_pmf_predict()` averages 0/1 votes and yields a coarse score unusable at a 5% cutoff. We score with the **weighted average of component probabilities**, which is continuous and comparable to the baseline. Val score spread (min/median/95th/99th/max): 0.000 / 0.008 / 0.120 / 0.282 / 0.912.
+ 
+Note: `ExponentiatedGradient.fit()` forwards extra kwargs to the constraint's `load_data()`, which accepts only `sensitive_features`. Any subsampling correction must be baked into the estimator (`row_weights`), not passed as `sample_weight`.
+ 
+### Results (difference_bound = 0.01)
+ 
+| Split | Group | FPR | Recall |
+|---|---|---|---|
+| val | 0 (under 50) | 0.0586 | 0.5494 |
+| val | 1 (50-plus) | 0.0083 | 0.2085 |
+| test | 0 | 0.0708 | 0.6003 |
+| test | 1 | 0.0132 | 0.2649 |
+ 
+Compared with the baseline:
+ 
+| Metric (val) | Baseline | ExpGrad |
+|---|---|---|
+| FPR, under 50 | 0.0368 | 0.0586 |
+| FPR, 50-plus | 0.1135 | 0.0083 |
+| FPR ratio (lower/higher) | 0.32 | **~0.14** |
+| Recall, 50-plus | 0.7234 | 0.2085 |
+| Recall, overall | 0.5478 | ~0.42 |
+ 
+**The gap did not close — it reversed and widened.** Under-50s are now wrongly flagged ~7x more often than 50-plus. By our own metric the intervention is worse than doing nothing, and it cost ~13pp of overall recall. 50-plus fraud recall collapsed from 0.72 to 0.21: roughly four in five older fraudsters now pass through.
+ 
+### Diagnosis (likely, not confirmed)
+ 
+The constraint and the deployed decision rule are not the same object. ExpGrad equalised FPR over **each component's own 0/1 decisions on the training months**; we then discarded those decisions, averaged the components' probabilities, and applied **one global cutoff on val**. Parity is not preserved across that change of decision rule. To equalise its own decisions, the reduction pushed 50-plus scores down; under a single shared cutoff those scores land far below it.
+ 
+Secondary suspect: each component computes `cut_` in-sample on the data it just fitted, so its 5% FPR estimate is optimistic.
+ 
+### Open question — resolve before writing this up
+ 
+1. **Sweep `difference_bound`** (0.001, 0.01, 0.05, 0.10), one predictions file each, e.g. `preds_expgrad_db0.05.parquet`. This traces the fairness/recall frontier we need for the trade-off curves anyway, and shows whether a looser bound stops short of overshooting.
+2. **Diagnostic only:** check `eg._pmf_predict(Xva)[:, 1] >= 0.5`. If FPRs are near-equal there, the diagnosis above is confirmed. Not usable as a headline result (it cannot hit a 5% FPR target, so it is not comparable to the other models).
+3. Optional: compute each component's `cut_` on a held-out month inside the wrapper rather than in-sample.
+If the sweep shows a looser bound behaves sensibly, the finding is **"this method is highly sensitive to the gap between the point where fairness is enforced and the point where decisions are made"** — not "the method fails". Frame it that way; the stronger claim is not supported by one configuration.
+ 
+Either way this is reportable and on-topic: the project asks whether fairness interventions deliver what they promise, and this is direct evidence that a published method can satisfy its stated constraint while making the deployed outcome worse. Jianrong should run SHAP on this model too — what an overcorrected model relies on is worth seeing.
+ 
+---
+
 ## Rules
 
 - **Seed 42** everywhere (`random_state=42`, `np.random.seed(42)`).
