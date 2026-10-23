@@ -166,7 +166,7 @@ The model also catches more 50-plus fraud (0.72 vs 0.46 recall): it treats "olde
 
 ## Intervention 1: ExponentiatedGradient (W2, run 23 Sep) — PRELIMINARY
  
-Notebook: `notebooks/02_expgrad.py` · Outputs: `preds/preds_expgrad.parquet`, `models/expgrad_components/`, `models/expgrad_weights.csv`
+Notebook: `notebooks/02_expgrad_py.ipynb` (sweep: `notebooks/02b_expgrad_sweep.ipynb`) · Outputs: `preds/preds_expgrad.parquet`, `models/expgrad_components/`, `models/expgrad_weights.csv`
  
 Status: **one configuration only (`difference_bound=0.01`). Do not write this up as a final result until the bound sweep is done** — see "Open question" below.
  
@@ -216,6 +216,15 @@ If the sweep shows a looser bound behaves sensibly, the finding is **"this metho
  
 Either way this is reportable and on-topic: the project asks whether fairness interventions deliver what they promise, and this is direct evidence that a published method can satisfy its stated constraint while making the deployed outcome worse. Jianrong should run SHAP on this model too — what an overcorrected model relies on is worth seeing.
  
+### Sweep pre-registration (stated 23 Oct 2026, before any sweep run)
+
+Bounds: `difference_bound` in [0.001, 0.01, 0.05, 0.1], `max_iter=40`, all else unchanged. The 0.01 point is refit (the original runtime is gone) and checked against the 23 Sep file.
+
+- **All four bounds are always reported** as the fairness/recall trade-off curve, whatever the outcome.
+- **The single number called "the ExpGrad result"** is the bound whose **val FPR ratio (lower/higher) is closest to 1.0**.
+- **Why this differs from the baseline rule** (highest recall at 5% FPR): that rule picks the most accurate model among candidates with no fairness trade-off. Here the candidates sit on a fairness/accuracy frontier, so "most accurate" and "best" are no longer the same thing, and reusing it would mechanically pick the loosest bound.
+- **Diagnostic, every bound:** per-group FPR of ExpGrad's own randomized classifier (mean of `_pmf_predict(X)[:,1]` over honest rows) on train and val, next to the deployed single-cutoff FPRs.
+
 ---
 
 ## Rules
