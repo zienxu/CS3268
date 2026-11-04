@@ -4,3 +4,5 @@
 .ipynb_checkpoints/
 !models/baseline_grid.csv
 !models/proxy_set.json
+CLAUDE.local.md
+.DS_Store

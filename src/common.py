@@ -2,14 +2,14 @@
 
 Usage in Colab:
     from google.colab import drive; drive.mount('/content/drive')
-    import sys; sys.path.append('/content/drive/MyDrive/CS3268/src')
+    import sys; sys.path.append('/content/drive/MyDrive/CS3268_Project/src')
     from common import load_split, threshold_at_fpr, save_preds
 """
 import numpy as np
 import pandas as pd
 
 SEED = 42
-ROOT = "/content/drive/MyDrive/CS3268"
+ROOT = "/content/drive/MyDrive/CS3268_Project"
 DATA = f"{ROOT}/data"
 PREDS = f"{ROOT}/preds"
 
