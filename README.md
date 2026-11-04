@@ -8,7 +8,7 @@ Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes
 
 ## Key results and talking points (slide-ready; updated 4 Nov 2026)
 
-Status: baseline done, ExpGrad done (canonical file = bound 0.05). Reweighing, group thresholds, bootstrap CIs and the TreeSHAP audit are still to run (target: before the 8 Nov code freeze). Fill the TBD rows as results land; every number must match a `preds/` file.
+Status: baseline, ExpGrad (canonical file = bound 0.05) and reweighing done. Group thresholds, bootstrap CIs and the TreeSHAP audit are still to run (target: before the 8 Nov code freeze). Fill the TBD rows as results land; every number must match a `preds/` file.
 
 **Headline finding.** Our fraud model wrongly flags honest 50-plus applicants about 3x as often as honest under-50s (FPR ratio 0.32 val, 0.33 test), at 5% overall FPR.
 
@@ -19,7 +19,7 @@ Status: baseline done, ExpGrad done (canonical file = bound 0.05). Reweighing, g
 | Baseline | n/a | 0.32 | 0.548 | Large, stable gap |
 | ExpGrad (bound 0.05) | During training | 0.48 | 0.549 | Partial fix, no recall cost; 50-plus still ~2x FPR |
 | ExpGrad (bound 0.01) | During training | 0.14 | 0.436 | Overshoots: under-50s now flagged more, ~11pp recall lost |
-| Reweighing | Before training | TBD | TBD | TBD |
+| Reweighing | Before training | 0.98 (test 0.90) | 0.527 | Near-parity on FPR; costs ~2pp overall recall (val), ~3pp (test) |
 | Group thresholds | After scoring | TBD | TBD | TBD |
 
 **ExpGrad one-liner.** A published method can satisfy its own constraint while the deployed outcome gets worse: fairness was enforced on randomized 0/1 votes, but decisions use one cutoff on averaged probabilities. Sensitive to where fairness is enforced vs where decisions are made, not "the method fails".
@@ -299,6 +299,33 @@ Bounds: `difference_bound` in [0.001, 0.01, 0.05, 0.1], `max_iter=40`, all else 
 - **Diagnostic, every bound:** per-group FPR of ExpGrad's own randomized classifier (mean of `_pmf_predict(X)[:,1]` over honest rows) on train and val, next to the deployed single-cutoff FPRs.
 
 ---
+
+## Intervention 2: Reweighing (run 4 Nov 2026)
+
+Notebook: `notebooks/04_reweigh.ipynb` · Outputs: `preds/preds_reweigh.parquet`, `models/reweigh.json`
+
+Status: **done 4 Nov (scheme fixed before running).**
+
+**Scheme (as taught in the course; Kamiran & Calders 2012 [cite]).** Each training row gets weight W(y,a) = P_exp(Y=y, A=a) / P_obs(Y=y, A=a), with P_exp = P(y)·P(a) (the joint if label and age group were independent), all computed on train months 0-4. W = 1 means that cell is already independent; W > 1 upweights it, W < 1 downweights it. Applied via `train_model(X, y, sample_weight=w)` with frozen `BEST_PARAMS`, seed 42. Full strength, single run, no sweep, no tuning. Cutoff set at 5% FPR on val, applied unchanged to test.
+
+**Weights (train).** W(under-50, honest) 0.997 · W(under-50, fraud) 1.395 · W(50-plus, honest) 1.012 · W(50-plus, fraud) 0.454; mean 1.000. 50-plus has the higher fraud rate, so its fraud rows are downweighted and under-50 fraud rows upweighted, as expected. The weights target independence of label and age group (demographic parity of the label), not FPR parity directly.
+
+**Results** (cutoff set on val; test uses the same cutoff).
+
+| Split | Group | FPR | Recall | n |
+|---|---|---|---|---|
+| val | 0 | 0.0502 | 0.5292 | 98,598 |
+| val | 1 | 0.0490 | 0.5234 | 20,725 |
+| val | all | 0.0500 | 0.5273 | 119,323 |
+| test | 0 | 0.0591 | 0.5611 | 171,232 |
+| test | 1 | 0.0657 | 0.5521 | 33,779 |
+| test | all | 0.0602 | 0.5580 | 205,011 |
+
+**FPR ratio (lower/higher): 0.976 val, 0.90 test** (baseline 0.32 / 0.33). On val the two groups are at parity (the 50-plus group is marginally lower; the difference is noise). On test 50-plus is flagged slightly more (0.066 vs 0.059). Group recall also converges (0.53 vs 0.52 on val; baseline 0.46 vs 0.72).
+
+**Cost.** Overall recall at 5% FPR falls 0.548 → 0.527 on val (-2.1pp) and 0.589 → 0.558 on test (-3.1pp). Against ±1.3pp SE this is a modest, not clearly significant, cost until Chloe's bootstrap CIs are in. Test FPR is 6.02% (baseline 6.22%), again above 5% (distribution shift).
+
+**Reading.** Unlike ExpGrad, which enforced fairness on one decision rule and deployed another, reweighing changes the data the single scored model learns from, so the deployed rule is the one that was fixed. Likely mechanism: with age and fraud decoupled in the weighted data, the model stops treating "older" as riskier, so 50-plus recall falls (0.72 → 0.52) and under-50 recall rises (0.46 → 0.53). Whether the model now leans on age proxies instead is the open question for the TreeSHAP audit (frozen proxy set). Single run, point estimates; no sweep, so the strength of the fix was not tuned.
 
 ## Proxy set (frozen 4 Nov 2026)
 
