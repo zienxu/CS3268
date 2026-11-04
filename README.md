@@ -8,7 +8,7 @@ Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes
 
 ## Key results and talking points (slide-ready; updated 4 Nov 2026)
 
-Status: baseline, ExpGrad (canonical file = bound 0.05) and reweighing done. Group thresholds, bootstrap CIs and the TreeSHAP audit are still to run (target: before the 8 Nov code freeze). Fill the TBD rows as results land; every number must match a `preds/` file.
+Status: baseline, ExpGrad (canonical file = bound 0.05) reweighing and group thresholds done. Bootstrap CIs and the TreeSHAP audit are still to run (target: before the 8 Nov code freeze). Fill the TBD rows as results land; every number must match a `preds/` file.
 
 **Headline finding.** Our fraud model wrongly flags honest 50-plus applicants about 3x as often as honest under-50s (FPR ratio 0.32 val, 0.33 test), at 5% overall FPR.
 
@@ -20,7 +20,7 @@ Status: baseline, ExpGrad (canonical file = bound 0.05) and reweighing done. Gro
 | ExpGrad (bound 0.05) | During training | 0.48 | 0.549 | Partial fix, no recall cost; 50-plus still ~2x FPR |
 | ExpGrad (bound 0.01) | During training | 0.14 | 0.436 | Overshoots: under-50s now flagged more, ~11pp recall lost |
 | Reweighing | Before training | 0.98 (test 0.90) | 0.527 | Near-parity on FPR; costs ~2pp overall recall (val), ~3pp (test) |
-| Group thresholds | After scoring | TBD | TBD | TBD |
+| Group thresholds | After scoring | 1.00 (test 0.93) | 0.536 | FPR parity by construction on val, ~1pp recall cost; but precision gap (9% vs 21%) |
 
 **ExpGrad one-liner.** A published method can satisfy its own constraint while the deployed outcome gets worse: fairness was enforced on randomized 0/1 votes, but decisions use one cutoff on averaged probabilities. Sensitive to where fairness is enforced vs where decisions are made, not "the method fails".
 
@@ -326,6 +326,35 @@ Status: **done 4 Nov (scheme fixed before running).**
 **Cost.** Overall recall at 5% FPR falls 0.548 → 0.527 on val (-2.1pp) and 0.589 → 0.558 on test (-3.1pp). Against ±1.3pp SE this is a modest, not clearly significant, cost until Chloe's bootstrap CIs are in. Test FPR is 6.02% (baseline 6.22%), again above 5% (distribution shift).
 
 **Reading.** Unlike ExpGrad, which enforced fairness on one decision rule and deployed another, reweighing changes the data the single scored model learns from, so the deployed rule is the one that was fixed. Likely mechanism: with age and fraud decoupled in the weighted data, the model stops treating "older" as riskier, so 50-plus recall falls (0.72 → 0.52) and under-50 recall rises (0.46 → 0.53). Whether the model now leans on age proxies instead is the open question for the TreeSHAP audit (frozen proxy set). Single run, point estimates; no sweep, so the strength of the fix was not tuned.
+
+## Intervention 3: Group thresholds (rule fixed 4 Nov 2026, before running)
+
+Notebook: `notebooks/05_groupthr.ipynb` · Output: `preds/preds_groupthr.parquet` (no new model)
+
+Status: **done 4 Nov (rule fixed before running).**
+
+**Rule.** Baseline scores are unchanged. Each age group gets its own cutoff: the 95th percentile of that group's honest val scores, so 5% of each group's honest val applicants are flagged (equal FPR across groups, "predictive equality", the FPR half of equalised odds). Set on val only and applied unchanged to test. No variants, no tuning.
+
+**Why this criterion.** It targets the headline gap directly (FPR is measured on innocent people only) and is the same criterion ExpGrad's `FalsePositiveRateParity` enforces, so the three fixes are compared on one target while differing in where they act. Demographic parity would force equal flag rates despite different base rates (2.34% vs 0.83%); equal opportunity equalises recall, not the harm we measure; full equalised odds needs randomisation for a single-cutoff-per-group rule; calibration cannot hold alongside equal error rates when base rates differ (Chouldechova 2017; Kleinberg et al. 2016).
+
+**Reported alongside (descriptive, not tuned):** per-group recall, precision and flag rate. Scores are identical to baseline, so the TreeSHAP attribution equals the baseline's by construction (reported, not run).
+
+**Cutoffs (val):** under-50 0.0232, 50-plus 0.0635 (50-plus must score ~2.7x higher to be flagged).
+
+**Results** (same cutoffs on test).
+
+| Split | Group | FPR | Recall | Precision | Flag rate | n |
+|---|---|---|---|---|---|---|
+| val | 0 | 0.0500 | 0.5250 | 0.0919 | 0.0545 | 98,598 |
+| val | 1 | 0.0500 | 0.5574 | 0.2055 | 0.0615 | 20,725 |
+| val | all | 0.0500 | 0.5358 | 0.1137 | 0.0557 | 119,323 |
+| test | 0 | 0.0625 | 0.5664 | 0.0918 | 0.0681 | 171,232 |
+| test | 1 | 0.0671 | 0.5612 | 0.2015 | 0.0815 | 33,779 |
+| test | all | 0.0632 | 0.5646 | 0.1128 | 0.0703 | 205,011 |
+
+**FPR ratio (lower/higher): 1.00 val (exact by construction), 0.93 test** (baseline 0.32 / 0.33). Overall recall 0.548 → 0.536 on val (-1.2pp) and 0.589 → 0.565 on test (-2.5pp); within about 1-2 SE, so a small cost pending Chloe's CIs. Test FPR is 6.32% overall (baseline 6.22%): the cutoffs carry over the same distribution shift.
+
+**Interaction with other criteria (the trade-off).** Equalising FPR leaves recall roughly equal too (0.53 vs 0.56 val) but precision very unequal: a flagged under-50 applicant is fraud 9% of the time, a flagged 50-plus applicant 21%. Flags therefore do not mean the same thing across groups (sufficiency/calibration violated), as the impossibility results predict when base rates differ. Flag rates also differ (5.5% vs 6.2% val), so demographic parity does not hold either.
 
 ## Proxy set (frozen 4 Nov 2026)
 
