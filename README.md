@@ -28,7 +28,7 @@ Status: baseline done, ExpGrad done (canonical file = bound 0.05). Reweighing, g
 - Test FPR is above 5% for every model (6.22% baseline): distribution shift, not a bug.
 - Higher base rates (2.34% vs 0.83%) explain the direction of the gap but do not justify it (FPR is measured on innocent people only).
 - Point estimates only until Chloe's bootstrap CIs are in; ±1.3pp SE on recall.
-- Proxy audit: TreeSHAP on baseline vs fixed models, using the frozen `proxy_set.json`. TBD.
+- Proxy audit: TreeSHAP on baseline vs fixed models, using the frozen 6-feature proxy set (one strong proxy: date_of_birth_distinct_emails_4w, AUC 0.81). Results TBD.
 
 **Limitations / Future Work.** Variant II robustness check not run (cut for time). Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample.
 
@@ -299,6 +299,43 @@ Bounds: `difference_bound` in [0.001, 0.01, 0.05, 0.1], `max_iter=40`, all else 
 - **Diagnostic, every bound:** per-group FPR of ExpGrad's own randomized classifier (mean of `_pmf_predict(X)[:,1]` over honest rows) on train and val, next to the deployed single-cutoff FPRs.
 
 ---
+
+## Proxy set (frozen 4 Nov 2026)
+
+File: `models/proxy_set.json` · Notebook: `notebooks/03_proxy_set.ipynb`
+
+**What it is.** After a fairness fix, the model may stop using age directly and lean on other features that carry the same information. The TreeSHAP audit checks whether attribution moves onto these "age proxies". The proxy set is the list of features we agree, in advance, count as proxies.
+
+**Why we need it.** The project asks whether a fix removes bias or just moves it. SHAP alone shows which features the model relies on, not which of them are linked to age, so a shift in attribution cannot be called "bias moving to a proxy" without an independent definition of proxy. The proxy set is that definition. It is fixed in advance and independent of every fix, so it targets the "moved it" half of the question and prevents choosing proxies after seeing where attribution went. A descriptive SHAP-only table (top features gaining or losing attribution per fix) is reported alongside as a second view.
+
+**Rule (written before seeing any output).** For each feature (excluding `customer_age`), fit a small decision tree (depth 3) on that feature alone to predict `age_group`, using train months 0-3, and score it on train month 4. AUC measures how well the feature alone separates 50-plus from under-50 (0.5 = no information, 1.0 = perfect; folded so direction does not matter). **Proxy iff AUC >= 0.60.**
+
+**Result.**
+
+| Feature | AUC | In set |
+|---|---|---|
+| date_of_birth_distinct_emails_4w | 0.806 | yes (strong) |
+| housing_status | 0.657 | yes |
+| current_address_months_count | 0.628 | yes |
+| phone_home_valid | 0.621 | yes |
+| employment_status | 0.604 | yes (borderline) |
+| device_os | 0.601 | yes (borderline) |
+| prev_address_months_count | 0.573 | no (next closest) |
+
+All 29 AUCs are stored in `proxy_set.json`. Most features sit at 0.50-0.57, i.e. carry little age information.
+
+**How to read it.** One feature is a strong age proxy (0.81); five are weak-to-moderate; the rest are not. The 0.60 cutoff is a judgement call: employment_status and device_os are barely over it and prev_address_months_count barely under. We do not move the cutoff after the fact; the report should say so and note the sensitivity.
+
+**Method provenance and defence (for Q&A and the report).**
+- *Idea.* A proxy is a feature that leaks information about the protected attribute, so we measure how well each feature predicts `age_group`. This follows the established idea in the proxy-discrimination literature (as recalled, not yet verified against the papers: Feldman et al. 2015, "Certifying and Removing Disparate Impact"; Datta et al. 2017, "Proxy Non-Discrimination in Data-Driven Systems". Check both before citing).
+- *Why AUC as the measure.* (1) Robust to class imbalance (50-plus is ~17% of applicants, so accuracy would reward always guessing under-50). (2) Threshold-free: it scores ranking across all cutoffs, so no second arbitrary cutoff is needed to evaluate a feature. (3) With a small tree, it catches nonlinear and categorical relationships that correlation misses. (4) Scored on a held-out month, so overfitting cannot qualify a feature. (5) Interpretable (0.5 = chance, 1.0 = perfect). It shows a feature *could* stand in for age, not that the model *uses* it that way, which is what the SHAP audit tests. Limits: no standard says AUC is the metric for proxy detection (Feldman et al. use balanced error rate, as recalled; closely related, not identical); mutual information or correlation would also be defensible alternatives.
+- *Our version is a simplification, not a named standard.* We screen features one at a time (depth-3 tree, held-out month, AUC folded as max(auc, 1-auc)). The published approaches typically use all features jointly.
+- *The 0.60 cutoff is a heuristic.* AUC 0.5 is chance; 0.60 is a common rule of thumb for "weak but real". It has no citation. It was fixed before output was seen, and we report sensitivity instead of defending it as correct (sensitivity table to be added as a labelled post-freeze analysis; at the frozen AUCs the set has 12 features at 0.55, 6 at 0.60, 2 at 0.65, 1 at 0.70).
+- *Limitation.* Single-feature screening can miss joint proxies, where several individually weak features together predict age. The set may therefore understate proxying. Optional post-freeze extra: one model on all non-age features predicting `age_group`; report its AUC as total leakage.
+- *Use.* The set is used only in the TreeSHAP audit (share of attribution on proxy features, compared across models). It does not enter training, thresholds or fairness metrics.
+- *Timeline.* The proxy audit was in the design from 21 Sep and `.gitignore` allowed the file from 23 Sep; the actual rule and file date from 4 Nov. ExpGrad (23 Sep, 23 Oct) was trained before the freeze, but its attributions were not examined.
+
+**Timing claim for Method.** Frozen on 4 Nov from train data only, before any attribution analysis of a fixed model and before reweighing and group thresholds were run. ExpGrad had been trained earlier (23 Sep, 23 Oct) but its attributions were not examined.
 
 ## Rules
 
