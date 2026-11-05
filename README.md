@@ -30,7 +30,7 @@ Status: baseline, ExpGrad (canonical file = bound 0.05) reweighing and group thr
 - Point estimates only until Chloe's bootstrap CIs are in; ±1.3pp SE on recall.
 - Proxy audit: TreeSHAP on baseline vs fixed models, using the frozen 6-feature proxy set (one strong proxy: date_of_birth_distinct_emails_4w, AUC 0.81). Results TBD.
 
-**Limitations / Future Work.** Robustness check and fix (Variant II) are pre-registered but gated on the core being done by Fri 6 Nov night; if not run, they move here. ExpGrad is not retrained in the robustness fix (too slow). Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample. Absolute recall is modest at the 5% FPR budget (baseline 0.548 val / 0.589 test; precision ~11%): we compare each fix to the same frozen baseline and did not re-tune; other operating points were not explored.
+**Limitations / Future Work.** Robustness check and fix (Variant II) are pre-registered but gated on the core being done by Fri 6 Nov night; if not run, they move here. ExpGrad's robustness fit is a single fit at bound 0.05, not re-swept. Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample. Absolute recall is modest at the 5% FPR budget (baseline 0.548 val / 0.589 test; precision ~11%): we compare each fix to the same frozen baseline and did not re-tune; other operating points were not explored.
 
 ---
 
@@ -360,7 +360,7 @@ Status: **done 4 Nov (rule fixed before running).**
 
 Notebook: `notebooks/06_robustness.ipynb`
 
-Status: **rules pre-registered; not yet run.** The check always runs. The fix (`RUN_FIX`) runs only if the core (CIs, TreeSHAP audit, own Method/Results text) is done by Fri 6 Nov night; otherwise it goes to Future Work. Robustness is claimed as a third RAI dimension **only if the fix is implemented**; the check alone is supporting evidence for risks and trade-offs.
+Status: **rules pre-registered 5 Nov; check run 5 Nov (results below); fix not yet run.** The check always runs. The fix (`RUN_FIX`) runs only if the core (CIs, TreeSHAP audit, own Method/Results text) is done by Fri 6 Nov night; otherwise it goes to Future Work. Robustness is claimed as a third RAI dimension **only if the fix is implemented**; the check alone is supporting evidence for risks and trade-offs.
 
 **Concepts (lecture).** A model can be accurate and fragile. Robustness R = metric_shifted / metric_clean. Accuracy is not used: with ~1% fraud, flagging nobody scores ~99%. Shift types: covariate (inputs change), label (fraud rate changes), concept (input-to-label relationship changes). Fixes from the lecture: retrain on combined data (used here); stable-feature subsets and segmented models are not used.
 
@@ -368,7 +368,33 @@ Status: **rules pre-registered; not yet run.** The check always runs. The fix (`
 
 **2. Check.** Frozen baseline, reweigh, group-threshold and ExpGrad 0.05 models, Base cutoffs unchanged, no retraining. Clean = Base val. Shifted = Base test (months 6-7, time shift only) and Variant II months 6-7 (dataset + time shift); the difference between the two rows is roughly the dataset effect. Metrics: overall recall, overall FPR, FPR ratio (lower/higher), recall under-50, recall 50-plus; each reported as clean, shifted and R. R is read relatively, comparing the fixes; no pass/fail cutoff. All rows reported.
 
-**3. Fix (lecture: retrain on combined data).** Baseline and reweigh retrained on Base train + Variant II train (months 0-4 of each), frozen `BEST_PARAMS`, seed 42, 232 trees, no dataset-indicator feature. Reweighing weights recomputed on the combined data. Cutoff at 5% FPR on Variant II val (month 5); group thresholds re-derived from the retrained baseline scores on that val. Evaluated on Variant II months 6-7, the same rows as the check, same metrics, before vs after. ExpGrad is not retrained (~15-20 min per fit); stated as a limitation. Single run, no tuning, all results reported.
+**3. Fix (lecture: retrain on combined data).** Baseline and reweigh retrained on Base train + Variant II train (months 0-4 of each), frozen `BEST_PARAMS`, seed 42, 232 trees, no dataset-indicator feature. Reweighing weights recomputed on the combined data. Cutoff at 5% FPR on Variant II val (month 5); group thresholds re-derived from the retrained baseline scores on that val. Evaluated on Variant II months 6-7, the same rows as the check, same metrics, before vs after. ExpGrad is handled separately (amended 5 Nov, before it was run; `notebooks/06b_expgrad_robust.ipynb`): ONE fit on the same combined data at the Base-winning bound 0.05 (not re-swept, so the bound was not re-selected on Variant II; state this), `max_iter=40`, same `FixedFPRXGB` wrapper and mixture score, cutoff at 5% FPR on Variant II val, evaluated on Variant II months 6-7 with the same metrics; control = frozen Base ExpGrad with only the cutoff re-set on Variant II val. Single run, no tuning, all results reported. **Control (added 5 Nov, before the fix was run):** the frozen Base baseline and reweigh with only their cutoff re-set at 5% FPR on Variant II val (no retraining), evaluated on the same rows, so any improvement can be attributed to retraining vs recalibration. If the fix is run its results go in this README whether or not they fit in the report.
+
+**Detection results (5 Nov).**
+- *Base val vs Variant II month 5 (KS D, or TV distance for categoricals), top 7:* customer_age 0.332, date_of_birth_distinct_emails_4w 0.146, housing_status 0.076, phone_home_valid 0.066, device_os 0.053, employment_status 0.050, current_address_months_count 0.047. Five of the six frozen proxy features are in this top 7, i.e. the dataset shift is concentrated in age and the age proxies.
+- *Label shift:* overall fraud rate is identical (0.0118 on both), but by group it differs: under-50 0.0095 → 0.0039, 50-plus 0.0227 → 0.0195. Implied from these rates, the 50-plus share rises from ~17% to ~51% (derived, not measured; confirm with `v2["val"].age_group.mean()`).
+- *Concept drift hint:* baseline AUC 0.899 (Base val) vs 0.904 (Variant II m5): no drop, so no sign of concept drift (a hint, not a test). KS on honest baseline scores: 0.069.
+- *Time shift on Base, val vs test:* dominated by velocity features (velocity_4w D=0.549, velocity_24h 0.319, velocity_6h 0.216, zip_count_4w 0.160), a different set from the age-related shift above.
+
+**Check results (R = shifted / clean; clean = Base val).**
+
+| Model | Shifted set | recall R | FPR (value, R) | FPR ratio (value, R) | recall under-50 R | recall 50-plus R |
+|---|---|---|---|---|---|---|
+| Baseline | Base test | 1.08 | 0.0622, 1.24 | 0.325, 1.00 | 1.11 | 1.02 |
+| Baseline | Variant II m6-7 | 1.26 | 0.0955, 1.91 | 0.326, 1.00 | 1.09 | 1.01 |
+| Reweigh | Base test | 1.06 | 0.0602, 1.20 | 0.900, 0.92 | 1.06 | 1.05 |
+| Reweigh | Variant II m6-7 | 1.02 | 0.0631, 1.26 | 0.906, 0.93 | 0.99 | 1.04 |
+| Group thr. | Base test | 1.05 | 0.0632, 1.26 | 0.932, 0.93 | 1.08 | 1.01 |
+| Group thr. | Variant II m6-7 | 1.04 | 0.0661, 1.32 | 0.920, 0.92 | 1.04 | 1.00 |
+| ExpGrad 0.05 | Base test | 1.06 | 0.0604, 1.21 | 0.467, 0.97 | 1.08 | 1.02 |
+| ExpGrad 0.05 | Variant II m6-7 | 1.16 | 0.0803, 1.61 | 0.470, 0.97 | 1.02 | 0.99 |
+
+**Reading (relative, no cutoff).**
+- *The fairness gap is stable under both shifts.* Every model's FPR ratio keeps its value (R 0.92-1.00), including on Variant II: the baseline gap (0.33) and the fixes' improvements carry over.
+- *Overall FPR is where the models differ.* On Variant II the overall FPR R is 1.91 (baseline), 1.61 (ExpGrad), 1.32 (group thresholds), 1.26 (reweigh); on Base test (time shift only) all are 1.20-1.26.
+- *Likely reason (back-of-envelope, not yet verified per group):* with ~51% 50-plus applicants, weighting the baseline's Base-test group FPRs (0.0465 under-50, 0.1431 50-plus) gives ~0.096, close to the observed 0.0955. Models that leave a gap (baseline, ExpGrad) flag more overall when the high-FPR group grows; models that equalise group FPR (reweigh, group thresholds) do not. So much of the overall-FPR difference is a group-mix effect, not instability of the fix. FPR ratio and per-group recall are the cleaner robustness measures here.
+- Reweighing is the most stable on every metric (recall R 1.02, FPR R 1.26, ratio R 0.93).
+- Point estimates only; no CIs on these rows.
 
 **Caveats to state.** Variant II is a dataset with different age-group fraud rates; how it was generated (synthetic bias injection, as recalled from the BAF paper) is unverified, so call it a controlled dataset shift, not a natural one. The fix needs labelled Variant II data. Point estimates unless Chloe's bootstrap is extended to these rows.
 
