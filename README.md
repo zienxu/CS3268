@@ -360,7 +360,7 @@ Status: **done 4 Nov (rule fixed before running).**
 
 Notebook: `notebooks/06_robustness.ipynb`
 
-Status: **rules pre-registered 5 Nov; check run 5 Nov (results below); fix not yet run.** The check always runs. The fix (`RUN_FIX`) runs only if the core (CIs, TreeSHAP audit, own Method/Results text) is done by Fri 6 Nov night; otherwise it goes to Future Work. Robustness is claimed as a third RAI dimension **only if the fix is implemented**; the check alone is supporting evidence for risks and trade-offs.
+Status: **rules pre-registered 5 Nov; check and fix (baseline, reweigh, group thresholds) run 5 Nov, results below; ExpGrad robustness fit (06b) pending.** The check always runs. The fix (`RUN_FIX`) runs only if the core (CIs, TreeSHAP audit, own Method/Results text) is done by Fri 6 Nov night; otherwise it goes to Future Work. Robustness is claimed as a third RAI dimension **only if the fix is implemented**; the check alone is supporting evidence for risks and trade-offs.
 
 **Concepts (lecture).** A model can be accurate and fragile. Robustness R = metric_shifted / metric_clean. Accuracy is not used: with ~1% fraud, flagging nobody scores ~99%. Shift types: covariate (inputs change), label (fraud rate changes), concept (input-to-label relationship changes). Fixes from the lecture: retrain on combined data (used here); stable-feature subsets and segmented models are not used.
 
@@ -395,6 +395,29 @@ Status: **rules pre-registered 5 Nov; check run 5 Nov (results below); fix not y
 - *Likely reason (back-of-envelope, not yet verified per group):* with ~51% 50-plus applicants, weighting the baseline's Base-test group FPRs (0.0465 under-50, 0.1431 50-plus) gives ~0.096, close to the observed 0.0955. Models that leave a gap (baseline, ExpGrad) flag more overall when the high-FPR group grows; models that equalise group FPR (reweigh, group thresholds) do not. So much of the overall-FPR difference is a group-mix effect, not instability of the fix. FPR ratio and per-group recall are the cleaner robustness measures here.
 - Reweighing is the most stable on every metric (recall R 1.02, FPR R 1.26, ratio R 0.93).
 - Point estimates only; no CIs on these rows.
+
+**Fix results (5 Nov), Variant II months 6-7.** Frozen = Base model, Base cutoff. Recal-only = frozen model, cutoff re-set at 5% FPR on Variant II val (control, no retraining). Retrained = trained on Base + Variant II train, cutoff on Variant II val.
+
+| Model | Version | FPR | Recall | FPR ratio | Recall under-50 | Recall 50-plus |
+|---|---|---|---|---|---|---|
+| Baseline | Frozen | 0.0955 | 0.6904 | 0.326 | 0.5021 | 0.7272 |
+| Baseline | Recal-only | 0.0639 | 0.5959 | 0.292 | 0.3830 | 0.6375 |
+| Baseline | Retrained | 0.0610 | 0.6028 | 0.274 | 0.3702 | 0.6483 |
+| Reweigh | Frozen | 0.0631 | 0.5389 | 0.906 | 0.5234 | 0.5419 |
+| Reweigh | Recal-only | 0.0622 | 0.5337 | 0.909 | 0.5234 | 0.5357 |
+| Reweigh | Retrained | 0.0600 | 0.5365 | 0.927 | 0.5106 | 0.5415 |
+| Group thr. | Frozen | 0.0661 | 0.5566 | 0.920 | 0.5447 | 0.5590 |
+| Group thr. | Recal-only (frozen baseline scores, per-group cutoffs re-set on Variant II val; control added 5 Nov after the other fix results, mechanical) | 0.0652 | 0.5528 | 0.936 | 0.5426 | 0.5548 |
+| Group thr. | Retrained (new per-group cutoffs from retrained baseline) | 0.0613 | 0.5434 | 0.910 | 0.5085 | 0.5502 |
+
+(ExpGrad: see 06b, pending.)
+
+**Reading.**
+- *For the baseline and reweigh, most of the improvement comes from moving the cutoff, not from retraining.* For the baseline, overall FPR falls 9.55% -> 6.39% by recalibration alone and 6.10% with retraining; recall, FPR ratio and per-group recall are similar between the two. For reweigh, all three versions are within ~0.3pp FPR and ~0.5pp recall. For group thresholds recalibration alone barely helps (FPR 6.61% -> 6.52%) while retraining takes it to 6.13%, at the cost of under-50 recall (0.543 -> 0.509), so there retraining contributes more than for the other two (~0.4pp FPR).
+- *The baseline's fix has a cost:* it flags fewer applicants, so recall drops 0.69 -> ~0.60 and under-50 recall 0.50 -> ~0.37, and the gap widens slightly (ratio 0.326 -> 0.27-0.29).
+- *FPR stays ~6.0-6.4%, not 5%,* because the cutoff is set on month 5 and months 6-7 carry the same time drift seen on Base (6.0-6.3%); retraining on months 0-4 cannot remove it.
+- *Models that already equalise group FPR (reweigh, group thresholds) barely change.* They were already stable under the shift.
+- *Honest framing:* on these data, retraining on combined data adds little over re-setting the cutoff. The robustness work is mainly a diagnosis (shift detected and named, fairness gap stable, overall FPR fragile in models that leave a gap) plus a modest, mostly threshold-driven fix. Point estimates, no CIs.
 
 **Caveats to state.** Variant II is a dataset with different age-group fraud rates; how it was generated (synthetic bias injection, as recalled from the BAF paper) is unverified, so call it a controlled dataset shift, not a natural one. The fix needs labelled Variant II data. Point estimates unless Chloe's bootstrap is extended to these rows.
 
