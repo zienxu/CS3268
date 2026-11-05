@@ -30,7 +30,7 @@ Status: baseline, ExpGrad (canonical file = bound 0.05) reweighing and group thr
 - Point estimates only until Chloe's bootstrap CIs are in; ±1.3pp SE on recall.
 - Proxy audit: TreeSHAP on baseline vs fixed models, using the frozen 6-feature proxy set (one strong proxy: date_of_birth_distinct_emails_4w, AUC 0.81). Results TBD.
 
-**Limitations / Future Work.** Variant II robustness check not run (cut for time). Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample.
+**Limitations / Future Work.** Robustness check and fix (Variant II) are pre-registered but gated on the core being done by Fri 6 Nov night; if not run, they move here. ExpGrad is not retrained in the robustness fix (too slow). Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample. Absolute recall is modest at the 5% FPR budget (baseline 0.548 val / 0.589 test; precision ~11%): we compare each fix to the same frozen baseline and did not re-tune; other operating points were not explored.
 
 ---
 
@@ -188,7 +188,7 @@ group 0 = under 50, group 1 = 50-plus.
 
 The model also catches more 50-plus fraud (0.72 vs 0.46 recall): it treats "older" as riskier across the board, which tracks the 2.34% vs 0.83% fraud-rate difference in the data. Higher base rates explain the direction of the gap; they do not justify it, since FPR is measured only on innocent people. Per Chouldechova (2017) and Kleinberg et al. (2016), equal calibration and equal error rates cannot both hold when group base rates differ — our interventions trade the latter for the former, and the trade-off curves quantify the cost.
 
-**Checkpoint (Sun 4 Oct): PASSED.** The gap is large and stable; we stay on Base. Variant II remains a robustness check only and was cut to Future Work (4 Nov).
+**Checkpoint (Sun 4 Oct): PASSED.** The gap is large and stable; we stay on Base. Variant II is used only for the robustness check below (restored 5 Nov, gated).
 
 ---
 
@@ -355,6 +355,22 @@ Status: **done 4 Nov (rule fixed before running).**
 **FPR ratio (lower/higher): 1.00 val (exact by construction), 0.93 test** (baseline 0.32 / 0.33). Overall recall 0.548 → 0.536 on val (-1.2pp) and 0.589 → 0.565 on test (-2.5pp); within about 1-2 SE, so a small cost pending Chloe's CIs. Test FPR is 6.32% overall (baseline 6.22%): the cutoffs carry over the same distribution shift.
 
 **Interaction with other criteria (the trade-off).** Equalising FPR leaves recall roughly equal too (0.53 vs 0.56 val) but precision very unequal: a flagged under-50 applicant is fraud 9% of the time, a flagged 50-plus applicant 21%. Flags therefore do not mean the same thing across groups (sufficiency/calibration violated), as the impossibility results predict when base rates differ. Flag rates also differ (5.5% vs 6.2% val), so demographic parity does not hold either.
+
+## Robustness: shift check and fix (rules fixed 5 Nov 2026, before running)
+
+Notebook: `notebooks/06_robustness.ipynb`
+
+Status: **rules pre-registered; not yet run.** The check always runs. The fix (`RUN_FIX`) runs only if the core (CIs, TreeSHAP audit, own Method/Results text) is done by Fri 6 Nov night; otherwise it goes to Future Work. Robustness is claimed as a third RAI dimension **only if the fix is implemented**; the check alone is supporting evidence for risks and trade-offs.
+
+**Concepts (lecture).** A model can be accurate and fragile. Robustness R = metric_shifted / metric_clean. Accuracy is not used: with ~1% fraud, flagging nobody scores ~99%. Shift types: covariate (inputs change), label (fraud rate changes), concept (input-to-label relationship changes). Fixes from the lecture: retrain on combined data (used here); stable-feature subsets and segmented models are not used.
+
+**1. Detection (no training).** Compare Base val (month 5) with Variant II month 5 (same month, no time confound), and Base val with Base test. Per feature: KS statistic D (numeric) or total-variation distance (categorical); report the top 10, ranked, with no p-value cutoff (KS rejects everything at this n). Also: KS on honest baseline scores; fraud rate overall and by age group (label shift); baseline AUC on each set (a hint of concept drift, not a test).
+
+**2. Check.** Frozen baseline, reweigh, group-threshold and ExpGrad 0.05 models, Base cutoffs unchanged, no retraining. Clean = Base val. Shifted = Base test (months 6-7, time shift only) and Variant II months 6-7 (dataset + time shift); the difference between the two rows is roughly the dataset effect. Metrics: overall recall, overall FPR, FPR ratio (lower/higher), recall under-50, recall 50-plus; each reported as clean, shifted and R. R is read relatively, comparing the fixes; no pass/fail cutoff. All rows reported.
+
+**3. Fix (lecture: retrain on combined data).** Baseline and reweigh retrained on Base train + Variant II train (months 0-4 of each), frozen `BEST_PARAMS`, seed 42, 232 trees, no dataset-indicator feature. Reweighing weights recomputed on the combined data. Cutoff at 5% FPR on Variant II val (month 5); group thresholds re-derived from the retrained baseline scores on that val. Evaluated on Variant II months 6-7, the same rows as the check, same metrics, before vs after. ExpGrad is not retrained (~15-20 min per fit); stated as a limitation. Single run, no tuning, all results reported.
+
+**Caveats to state.** Variant II is a dataset with different age-group fraud rates; how it was generated (synthetic bias injection, as recalled from the BAF paper) is unverified, so call it a controlled dataset shift, not a natural one. The fix needs labelled Variant II data. Point estimates unless Chloe's bootstrap is extended to these rows.
 
 ## Proxy set (frozen 4 Nov 2026)
 
