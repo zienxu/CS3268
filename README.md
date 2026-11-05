@@ -368,7 +368,7 @@ Status: **rules pre-registered 5 Nov; check and fix (baseline, reweigh, group th
 
 **2. Check.** Frozen baseline, reweigh, group-threshold and ExpGrad 0.05 models, Base cutoffs unchanged, no retraining. Clean = Base val. Shifted = Base test (months 6-7, time shift only) and Variant II months 6-7 (dataset + time shift); the difference between the two rows is roughly the dataset effect. Metrics: overall recall, overall FPR, FPR ratio (lower/higher), recall under-50, recall 50-plus; each reported as clean, shifted and R. R is read relatively, comparing the fixes; no pass/fail cutoff. All rows reported.
 
-**3. Fix (lecture: retrain on combined data).** Baseline and reweigh retrained on Base train + Variant II train (months 0-4 of each), frozen `BEST_PARAMS`, seed 42, 232 trees, no dataset-indicator feature. Reweighing weights recomputed on the combined data. Cutoff at 5% FPR on Variant II val (month 5); group thresholds re-derived from the retrained baseline scores on that val. Evaluated on Variant II months 6-7, the same rows as the check, same metrics, before vs after. ExpGrad is handled separately (amended 5 Nov, before it was run; `notebooks/06b_expgrad_robust.ipynb`): ONE fit on the same combined data at the Base-winning bound 0.05 (not re-swept, so the bound was not re-selected on Variant II; state this), `max_iter=40`, same `FixedFPRXGB` wrapper and mixture score, cutoff at 5% FPR on Variant II val, evaluated on Variant II months 6-7 with the same metrics; control = frozen Base ExpGrad with only the cutoff re-set on Variant II val. Single run, no tuning, all results reported. **Control (added 5 Nov, before the fix was run):** the frozen Base baseline and reweigh with only their cutoff re-set at 5% FPR on Variant II val (no retraining), evaluated on the same rows, so any improvement can be attributed to retraining vs recalibration. If the fix is run its results go in this README whether or not they fit in the report.
+**3. Fix (lecture: retrain on combined data).** Baseline and reweigh retrained on Base train + Variant II train (months 0-4 of each), frozen `BEST_PARAMS`, seed 42, 232 trees, no dataset-indicator feature. Reweighing weights recomputed on the combined data. Cutoff at 5% FPR on Variant II val (month 5); group thresholds re-derived from the retrained baseline scores on that val. Evaluated on Variant II months 6-7, the same rows as the check, same metrics, before vs after. ExpGrad is handled separately (amended 5 Nov, before it was run; `notebooks/06b_expgrad_robust.ipynb`): ONE fit on the same combined data at the Base-winning bound 0.05 (not re-swept, so the bound was not re-selected on Variant II; state this), `max_iter=40`, same `FixedFPRXGB` wrapper and mixture score, cutoff at 5% FPR on Variant II val, evaluated on Variant II months 6-7 with the same metrics; control = frozen Base ExpGrad with only the cutoff re-set on Variant II val. Single run, no tuning, all results reported. **Control (added 5 Nov, before the fix was run):** the frozen Base baseline and reweigh with only their cutoff re-set at 5% FPR on Variant II val (no retraining), evaluated on the same rows, so any improvement can be attributed to retraining vs re-setting the cutoff. If the fix is run its results go in this README whether or not they fit in the report.
 
 **Detection results (5 Nov).**
 - *Base val vs Variant II month 5 (KS D, or TV distance for categoricals), top 7:* customer_age 0.332, date_of_birth_distinct_emails_4w 0.146, housing_status 0.076, phone_home_valid 0.066, device_os 0.053, employment_status 0.050, current_address_months_count 0.047. Five of the six frozen proxy features are in this top 7, i.e. the dataset shift is concentrated in age and the age proxies.
@@ -396,24 +396,24 @@ Status: **rules pre-registered 5 Nov; check and fix (baseline, reweigh, group th
 - Reweighing is the most stable on every metric (recall R 1.02, FPR R 1.26, ratio R 0.93).
 - Point estimates only; no CIs on these rows.
 
-**Fix results (5 Nov), Variant II months 6-7.** Frozen = Base model, Base cutoff. Recal-only = frozen model, cutoff re-set at 5% FPR on Variant II val (control, no retraining). Retrained = trained on Base + Variant II train, cutoff on Variant II val.
+**Fix results (5 Nov), Variant II months 6-7.** Frozen = Base model, Base cutoff. Cutoff re-set only = frozen model, cutoff re-set at 5% FPR on Variant II val (control, no retraining). Retrained = trained on Base + Variant II train, cutoff on Variant II val.
 
 | Model | Version | FPR | Recall | FPR ratio | Recall under-50 | Recall 50-plus |
 |---|---|---|---|---|---|---|
 | Baseline | Frozen | 0.0955 | 0.6904 | 0.326 | 0.5021 | 0.7272 |
-| Baseline | Recal-only | 0.0639 | 0.5959 | 0.292 | 0.3830 | 0.6375 |
+| Baseline | Cutoff re-set only | 0.0639 | 0.5959 | 0.292 | 0.3830 | 0.6375 |
 | Baseline | Retrained | 0.0610 | 0.6028 | 0.274 | 0.3702 | 0.6483 |
 | Reweigh | Frozen | 0.0631 | 0.5389 | 0.906 | 0.5234 | 0.5419 |
-| Reweigh | Recal-only | 0.0622 | 0.5337 | 0.909 | 0.5234 | 0.5357 |
+| Reweigh | Cutoff re-set only | 0.0622 | 0.5337 | 0.909 | 0.5234 | 0.5357 |
 | Reweigh | Retrained | 0.0600 | 0.5365 | 0.927 | 0.5106 | 0.5415 |
 | Group thr. | Frozen | 0.0661 | 0.5566 | 0.920 | 0.5447 | 0.5590 |
-| Group thr. | Recal-only (frozen baseline scores, per-group cutoffs re-set on Variant II val; control added 5 Nov after the other fix results, mechanical) | 0.0652 | 0.5528 | 0.936 | 0.5426 | 0.5548 |
+| Group thr. | Cutoff re-set only (frozen baseline scores, per-group cutoffs re-set on Variant II val; control added 5 Nov after the other fix results, mechanical) | 0.0652 | 0.5528 | 0.936 | 0.5426 | 0.5548 |
 | Group thr. | Retrained (new per-group cutoffs from retrained baseline) | 0.0613 | 0.5434 | 0.910 | 0.5085 | 0.5502 |
 
 (ExpGrad: see 06b, pending.)
 
 **Reading.**
-- *For the baseline and reweigh, most of the improvement comes from moving the cutoff, not from retraining.* For the baseline, overall FPR falls 9.55% -> 6.39% by recalibration alone and 6.10% with retraining; recall, FPR ratio and per-group recall are similar between the two. For reweigh, all three versions are within ~0.3pp FPR and ~0.5pp recall. For group thresholds recalibration alone barely helps (FPR 6.61% -> 6.52%) while retraining takes it to 6.13%, at the cost of under-50 recall (0.543 -> 0.509), so there retraining contributes more than for the other two (~0.4pp FPR).
+- *For the baseline and reweigh, most of the improvement comes from moving the cutoff, not from retraining.* For the baseline, overall FPR falls 9.55% -> 6.39% by re-setting the cutoff alone and 6.10% with retraining; recall, FPR ratio and per-group recall are similar between the two. For reweigh, all three versions are within ~0.3pp FPR and ~0.5pp recall. For group thresholds re-setting the cutoff alone barely helps (FPR 6.61% -> 6.52%) while retraining takes it to 6.13%, at the cost of under-50 recall (0.543 -> 0.509), so there retraining contributes more than for the other two (~0.4pp FPR).
 - *The baseline's fix has a cost:* it flags fewer applicants, so recall drops 0.69 -> ~0.60 and under-50 recall 0.50 -> ~0.37, and the gap widens slightly (ratio 0.326 -> 0.27-0.29).
 - *FPR stays ~6.0-6.4%, not 5%,* because the cutoff is set on month 5 and months 6-7 carry the same time drift seen on Base (6.0-6.3%); retraining on months 0-4 cannot remove it.
 - *Models that already equalise group FPR (reweigh, group thresholds) barely change.* They were already stable under the shift.
