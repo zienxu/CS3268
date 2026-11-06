@@ -6,9 +6,9 @@ Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes
 
 ---
 
-## Key results and talking points (slide-ready; updated 4 Nov 2026)
+## Key results and talking points (slide-ready; updated 6 Nov 2026)
 
-Status: baseline, ExpGrad (canonical file = bound 0.05) reweighing and group thresholds done. Bootstrap CIs and the TreeSHAP audit are still to run (target: before the 8 Nov code freeze). Fill the TBD rows as results land; every number must match a `preds/` file.
+Status: baseline, ExpGrad (canonical file = bound 0.05), reweighing, group thresholds, and Jianrong's TreeSHAP audit done. Bootstrap CIs are still to run (target: before the 8 Nov code freeze). Fairness numbers must match a `preds/` file; the attribution results below use saved model artifacts and the frozen proxy set.
 
 **Headline finding.** Our fraud model wrongly flags honest 50-plus applicants about 3x as often as honest under-50s (FPR ratio 0.32 val, 0.33 test), at 5% overall FPR.
 
@@ -28,7 +28,7 @@ Status: baseline, ExpGrad (canonical file = bound 0.05) reweighing and group thr
 - Test FPR is above 5% for every model (6.22% baseline): distribution shift, not a bug.
 - Higher base rates (2.34% vs 0.83%) explain the direction of the gap but do not justify it (FPR is measured on innocent people only).
 - Point estimates only until Chloe's bootstrap CIs are in; ±1.3pp SE on recall.
-- Proxy audit: TreeSHAP on baseline vs fixed models, using the frozen 6-feature proxy set (one strong proxy: date_of_birth_distinct_emails_4w, AUC 0.81). Results TBD.
+- Proxy audit (month-5 val): the frozen 6-feature set receives 35.49% of baseline mean absolute TreeSHAP, 34.66% after reweighing, 36.17% for ExpGrad 0.05, and 31.21% for ExpGrad 0.01. The 0.05 winner's +0.68 percentage-point proxy-share change is descriptive, not proof of bias relocation. See the audit section below.
 
 **Limitations / Future Work.** Robustness check and fix (Variant II) are pre-registered but gated on the core being done by Fri 6 Nov night; if not run, they move here. ExpGrad's robustness fit is a single fit at bound 0.05, not re-swept. Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample. Absolute recall is modest at the 5% FPR budget (baseline 0.548 val / 0.589 test; precision ~11%): we compare each fix to the same frozen baseline and did not re-tune; other operating points were not explored.
 
@@ -325,7 +325,7 @@ Status: **done 4 Nov (scheme fixed before running).**
 
 **Cost.** Overall recall at 5% FPR falls 0.548 → 0.527 on val (-2.1pp) and 0.589 → 0.558 on test (-3.1pp). Against ±1.3pp SE this is a modest, not clearly significant, cost until Chloe's bootstrap CIs are in. Test FPR is 6.02% (baseline 6.22%), again above 5% (distribution shift).
 
-**Reading.** Unlike ExpGrad, which enforced fairness on one decision rule and deployed another, reweighing changes the data the single scored model learns from, so the deployed rule is the one that was fixed. Likely mechanism: with age and fraud decoupled in the weighted data, the model stops treating "older" as riskier, so 50-plus recall falls (0.72 → 0.52) and under-50 recall rises (0.46 → 0.53). Whether the model now leans on age proxies instead is the open question for the TreeSHAP audit (frozen proxy set). Single run, point estimates; no sweep, so the strength of the fix was not tuned.
+**Reading.** Unlike ExpGrad, which enforced fairness on one decision rule and deployed another, reweighing changes the data the single scored model learns from, so the deployed rule is the one that was fixed. Likely mechanism: with age and fraud decoupled in the weighted data, the model stops treating "older" as riskier, so 50-plus recall falls (0.72 → 0.52) and under-50 recall rises (0.46 → 0.53). Jianrong's TreeSHAP audit finds that the frozen proxy share falls by 0.83 percentage points versus baseline; it does not show increased reliance on that proxy set for this fix. Single run, point estimates; no sweep, so the strength of the fix was not tuned.
 
 ## Intervention 3: Group thresholds (rule fixed 4 Nov 2026, before running)
 
@@ -457,6 +457,42 @@ All 29 AUCs are stored in `proxy_set.json`. Most features sit at 0.50-0.57, i.e.
 - *Timeline.* The proxy audit was in the design from 21 Sep and `.gitignore` allowed the file from 23 Sep; the actual rule and file date from 4 Nov. ExpGrad (23 Sep, 23 Oct) was trained before the freeze, but its attributions were not examined.
 
 **Timing claim for Method.** Frozen on 4 Nov from train data only, before any attribution analysis of a fixed model and before reweighing and group thresholds were run. ExpGrad had been trained earlier (23 Sep, 23 Oct) but its attributions were not examined.
+
+## TreeSHAP audit (Jianrong, 6 Nov 2026)
+
+Notebook: `notebooks/07_jianrong_treeshap.ipynb` · [Report and CSVs in Drive](https://drive.google.com/drive/folders/1DXeRAPgPt4meFLC6Uz-hp46GRBp5HBuk). The Drive folder includes a byte-identical snapshot of the frozen GitHub proxy file (SHA-256 `5ecd9c01c94ad4bf1b7535668ccd567ff0474dfc030490d858962f71cc091c22`). The frozen source file was not changed.
+
+**Method.** Explain all 119,323 month-5 validation rows with the same 30 input features for every model. No test rows enter the audit. XGBoost native exact TreeSHAP gives per-feature contributions to the raw margin (log odds). For each feature, take mean absolute SHAP across rows and divide by the sum over all 30 features. Compare these shares, not raw SHAP magnitudes. Each saved model's val scores were checked against its prediction file (largest absolute difference `2.1e-8`). For ExpGrad, combine signed component SHAP values row by row with the saved weights before taking absolute values; this approximates attribution for the deployed mixture of component probabilities. Group thresholds use baseline scores, verified on val, so their attribution is baseline's by construction; no separate SHAP run was made.
+
+| Model | Frozen proxy share | Change vs baseline (pp) | `customer_age` share |
+|---|---:|---:|---:|
+| Baseline | 35.49% | — | 3.15% |
+| Reweighing | 34.66% | −0.83 | 3.02% |
+| ExpGrad 0.05 (winner) | 36.17% | +0.68 | 1.51% |
+| ExpGrad 0.01 (overcorrected) | 31.21% | −4.28 | 13.07% |
+| Group thresholds | 35.49% | 0.00 | 3.15% |
+
+**Frozen proxy features and direct age, shown separately (share of total mean absolute SHAP):**
+
+| Feature | Baseline | Reweigh | ExpGrad 0.05 | ExpGrad 0.01 |
+|---|---:|---:|---:|---:|
+| `date_of_birth_distinct_emails_4w` | 2.37% | 1.98% | 2.42% | 2.17% |
+| `housing_status` | 7.45% | 7.10% | 7.71% | 5.64% |
+| `current_address_months_count` | 5.41% | 5.14% | 5.41% | 4.82% |
+| `phone_home_valid` | 7.19% | 7.50% | 7.64% | 7.32% |
+| `employment_status` | 3.97% | 3.78% | 3.89% | 3.64% |
+| `device_os` | 9.11% | 9.16% | 9.09% | 7.61% |
+| `customer_age` (not in proxy set) | 3.15% | 3.02% | 1.51% | 13.07% |
+
+**Largest descriptive attribution-share changes vs baseline** (percentage points; full feature table in Drive):
+
+| Model | Largest gains | Largest losses |
+|---|---|---|
+| Reweighing | `credit_risk_score` +0.65; `name_email_similarity` +0.46; `velocity_4w` +0.41 | `proposed_credit_limit` −0.50; `date_of_birth_distinct_emails_4w` −0.39; `housing_status` −0.34 |
+| ExpGrad 0.05 | `phone_home_valid` +0.45; `velocity_4w` +0.35; `credit_risk_score` +0.29 | `customer_age` −1.64; `proposed_credit_limit` −0.27; `email_is_free` −0.16 |
+| ExpGrad 0.01 | `customer_age` +9.92; `phone_home_valid` +0.14; `velocity_4w` +0.08 | `housing_status` −1.81; `device_os` −1.50; `email_is_free` −0.62 |
+
+**Reading and limits.** The 0.05 winner has a small increase in frozen-proxy share while direct-age share falls. Reweighing's frozen-proxy share falls slightly. The overcorrected 0.01 model relies much more on direct age and less on the frozen proxy set. These descriptive shares neither prove nor rule out bias relocation. Correlated features can split SHAP credit and understate proxy use; the single-feature proxy screen can miss joint proxies. The 0.60 proxy cutoff stays frozen. A separately labelled post-freeze sensitivity table for 0.55/0.65/0.70 is in the Drive report.
 
 ## Rules
 
