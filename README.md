@@ -6,28 +6,31 @@ Team: Zien Xu (data, baseline, integration) · Chloe (fairness metrics and fixes
 
 ---
 
-## Key results and talking points (slide-ready; updated 6 Nov 2026)
+## Key results and talking points (slide-ready; updated 7 Nov 2026)
 
-Status: baseline, ExpGrad (canonical file = bound 0.05), reweighing, group thresholds, and Jianrong's TreeSHAP audit done. Bootstrap CIs are still to run (target: before the 8 Nov code freeze). Fairness numbers must match a `preds/` file; the attribution results below use saved model artifacts and the frozen proxy set.
+Status: baseline, ExpGrad (canonical file = bound 0.05), reweighing, group thresholds, Jianrong's TreeSHAP audit and Chloe's bootstrap CIs done. Fairness numbers must match a `preds/` file (CIs: `models/bootstrap_cis.csv`); the attribution results below use saved model artifacts and the frozen proxy set.
 
-**Headline finding.** Our fraud model wrongly flags honest 50-plus applicants about 3x as often as honest under-50s (FPR ratio 0.32 val, 0.33 test), at 5% overall FPR.
+**Headline finding.** Our fraud model wrongly flags honest 50-plus applicants about 3x as often as honest under-50s (FPR ratio 0.32 val [0.31, 0.34], 0.32 test [0.31, 0.34]), at 5% overall FPR.
 
-**Results by fix (val FPR ratio, lower/higher; 1.0 = parity).**
+**Results by fix (FPR ratio, lower/higher; 1.0 = parity). Brackets are 95% bootstrap CIs; recall change is paired vs baseline.**
 
-| Fix | Where it acts | Val ratio | Overall recall | Takeaway |
-|---|---|---|---|---|
-| Baseline | n/a | 0.32 | 0.548 | Large, stable gap |
-| ExpGrad (bound 0.05) | During training | 0.48 | 0.549 | Partial fix, no recall cost; 50-plus still ~2x FPR |
-| ExpGrad (bound 0.01) | During training | 0.14 | 0.436 | Overshoots: under-50s now flagged more, ~11pp recall lost |
-| Reweighing | Before training | 0.98 (test 0.90) | 0.527 | Near-parity on FPR; costs ~2pp overall recall (val), ~3pp (test) |
-| Group thresholds | After scoring | 1.00 (test 0.93) | 0.536 | FPR parity by construction on val, ~1pp recall cost; but precision gap (9% vs 21%) |
+| Fix | Where it acts | Val ratio | Test ratio | Overall recall (val) | Recall change vs baseline (test) | Takeaway |
+|---|---|---|---|---|---|---|
+| Baseline | n/a | 0.32 [0.31, 0.34] | 0.32 [0.31, 0.34] | 0.548 [0.521, 0.573] | n/a | Large, stable gap |
+| ExpGrad (bound 0.05) | During training | 0.48 [0.46, 0.51] | 0.47 [0.45, 0.48] | 0.549 [0.522, 0.575] | −0.7pp [−1.6, +0.2] | Partial fix, no detectable overall recall cost, but detection shifts from 50-plus (−5.7pp) to under-50 (+1.9pp); 50-plus still ~2x FPR |
+| ExpGrad (bound 0.01) | During training | 0.14 [0.12, 0.17] | 0.19 [0.17, 0.21] | 0.436 [0.409, 0.462] | −10.4pp [−12.1, −8.8] | Overshoots: under-50s now flagged more; 50-plus recall collapses to 0.21 (val) |
+| Reweighing | Before training | 0.98 [0.91, 1.00] | 0.90 [0.86, 0.94] | 0.527 [0.500, 0.554] | −3.1pp [−4.4, −1.9] | Near-parity on FPR; real recall cost (val −2.1pp [−4.0, −0.2], only just) |
+| Group thresholds | After scoring | 1.00 (by construction) | 0.93 [0.89, 0.97] | 0.536 [0.508, 0.562] | −2.5pp [−3.6, −1.3] | FPR parity on val only by construction; recall cost real on test, not on val (−1.2pp [−2.9, +0.4]); precision gap 9% vs 21% |
 
 **ExpGrad one-liner.** A published method can satisfy its own constraint while the deployed outcome gets worse: fairness was enforced on randomized 0/1 votes, but decisions use one cutoff on averaged probabilities. Sensitive to where fairness is enforced vs where decisions are made, not "the method fails".
 
 **Other talking points.**
 - Test FPR is above 5% for every model (6.22% baseline): distribution shift, not a bug.
 - Higher base rates (2.34% vs 0.83%) explain the direction of the gap but do not justify it (FPR is measured on innocent people only).
-- Point estimates only until Chloe's bootstrap CIs are in; ±1.3pp SE on recall.
+- Every fix narrows the FPR gap (all paired changes in FPR ratio exclude 0), but none removes wrongful rejections: overall val FPR is 5% for every model by construction, so the fixes **redistribute** them. Reweighing on val: 50-plus FPR −6.4pp, under-50 FPR +1.3pp, roughly 1,300 fewer honest 50-plus and 1,300 more honest under-50 applicants wrongly rejected. Fraud detection moves the same way (50-plus recall −20pp, under-50 +7pp).
+- 50-plus applicants are 17% of honest applicants but 39.0% [37.7, 40.1] of those wrongly rejected under the baseline (val; test 37.3% [36.5, 38.1]). Reweighing and group thresholds bring this to ~17%, i.e. proportional.
+- The precision gap (~9% vs ~20%) appears for **both** FPR-parity fixes (reweighing and group thresholds), not only group thresholds: the impossibility result when base rates differ.
+- Recall CIs are about ±2.5pp on val (only ~1,400 fraud cases); per-group FPR CIs are much tighter. See "Bootstrap CIs" below.
 - Proxy audit (month-5 val): the frozen 6-feature set receives 35.49% of baseline mean absolute TreeSHAP, 34.66% after reweighing, 36.17% for ExpGrad 0.05, and 31.21% for ExpGrad 0.01. The 0.05 winner's +0.68 percentage-point proxy-share change is descriptive, not proof of bias relocation. See the audit section below.
 
 **Limitations / Future Work.** Robustness check and fix (Variant II) are pre-registered but gated on the core being done by Fri 6 Nov night; if not run, they move here. ExpGrad's robustness fit is a single fit at bound 0.05, not re-swept. Finer ExpGrad bound grid between 0.01 and 0.05 untested. Component cutoffs computed in-sample. Absolute recall is modest at the 5% FPR budget (baseline 0.548 val / 0.589 test; precision ~11%): we compare each fix to the same frozen baseline and did not re-tune; other operating points were not explored.
@@ -182,9 +185,9 @@ group 0 = under 50, group 1 = 50-plus.
 | test | 0 | 0.0465 | 0.5109 | 171,232 |
 | test | 1 | 0.1431 | 0.7391 | 33,779 |
 
-**FPR ratio (lower/higher) = 0.32 on val, 0.33 on test.** Parity would be 1.0. Honest 50-plus applicants are ~3x more likely to be wrongly rejected than honest under-50s, and the gap is stable across splits.
+**FPR ratio (lower/higher) = 0.32 on val [0.31, 0.34], 0.32 on test [0.31, 0.34]** (test 0.3249; earlier versions rounded this to 0.33). Parity would be 1.0. Honest 50-plus applicants are ~3x more likely to be wrongly rejected than honest under-50s, and the gap is stable across splits.
 
-50-plus applicants are ~17% of applicants but ~39% of honest applicants wrongly rejected (approximate — Chloe's bootstrap figures supersede this).
+50-plus applicants are 17.2% of honest applicants but **39.0% [37.7, 40.1]** of honest applicants wrongly rejected on val (test: 16.2% vs 37.3% [36.5, 38.1]). Bootstrap figures; they replace the earlier "~39%" approximation.
 
 The model also catches more 50-plus fraud (0.72 vs 0.46 recall): it treats "older" as riskier across the board, which tracks the 2.34% vs 0.83% fraud-rate difference in the data. Higher base rates explain the direction of the gap; they do not justify it, since FPR is measured only on innocent people. Per Chouldechova (2017) and Kleinberg et al. (2016), equal calibration and equal error rates cannot both hold when group base rates differ — our interventions trade the latter for the former, and the trade-off curves quantify the cost.
 
@@ -261,7 +264,7 @@ Refit of 0.01 reproduces the 23 Sep run (val FPR 0.0586 / 0.0083, recall 0.5494 
 | 0.1 | 1 of 6 | 0.0368 / 0.1135 | 0.325 | 0.5478 / 0.7234 | 0.325 | 0.5893 | 50-plus |
 | baseline | – | 0.0368 / 0.1135 | 0.325 | 0.5478 / 0.7234 | 0.325 | 0.5893 | 50-plus |
 
-**"The ExpGrad result" (pre-registered rule: val FPR ratio closest to 1.0) = bound 0.05.** Val ratio 0.32 → 0.48 (test 0.33 → 0.47) with no change in overall recall (0.5485 vs 0.5478, well inside ±1.3pp SE). 50-plus recall falls 0.72 → 0.67, under-50 recall rises 0.46 → 0.49. This is a partial fix only: 50-plus applicants are still wrongly flagged ~2x as often (val FPR 0.087 vs 0.042; test 0.109 vs 0.051). Treat the 0.32 → 0.48 change as a point estimate until Chloe's bootstrap CIs are in.
+**"The ExpGrad result" (pre-registered rule: val FPR ratio closest to 1.0) = bound 0.05.** Val ratio 0.32 → 0.48 (test 0.32 → 0.47); paired change +0.16 [+0.14, +0.17] val, +0.14 [+0.13, +0.15] test, so the improvement is real. No detectable change in overall recall (0.5485 vs 0.5478; paired change +0.1pp [−1.1, +1.3] val, −0.7pp [−1.6, +0.2] test). But the paired per-group changes are real: 50-plus recall falls 0.72 → 0.67 (−5.5pp [−7.6, −3.4] val; −5.7pp [−7.2, −4.2] test) and under-50 recall rises 0.46 → 0.49 (+2.9pp [+1.4, +4.3] val; +1.9pp [+0.9, +2.9] test). So overall recall is unchanged because detection shifts between groups, not because nothing changed. This is a partial fix only: 50-plus applicants are still wrongly flagged ~2x as often (val FPR 0.087 vs 0.042; test 0.109 vs 0.051).
 
 Observations:
 - **Tight bounds (0.001, 0.01) overshoot:** the gap reverses (under-50s worse) and overall recall drops ~11pp.
@@ -321,9 +324,9 @@ Status: **done 4 Nov (scheme fixed before running).**
 | test | 1 | 0.0657 | 0.5521 | 33,779 |
 | test | all | 0.0602 | 0.5580 | 205,011 |
 
-**FPR ratio (lower/higher): 0.976 val, 0.90 test** (baseline 0.32 / 0.33). On val the two groups are at parity (the 50-plus group is marginally lower; the difference is noise). On test 50-plus is flagged slightly more (0.066 vs 0.059). Group recall also converges (0.53 vs 0.52 on val; baseline 0.46 vs 0.72).
+**FPR ratio (lower/higher): 0.976 val [0.913, 0.999], 0.90 test [0.86, 0.94]** (baseline 0.32 / 0.32). On val the two groups are at parity (the 50-plus group is marginally lower; the difference is noise). On test 50-plus is flagged slightly more (0.066 vs 0.059). Group recall also converges (0.53 vs 0.52 on val; baseline 0.46 vs 0.72).
 
-**Cost.** Overall recall at 5% FPR falls 0.548 → 0.527 on val (-2.1pp) and 0.589 → 0.558 on test (-3.1pp). Against ±1.3pp SE this is a modest, not clearly significant, cost until Chloe's bootstrap CIs are in. Test FPR is 6.02% (baseline 6.22%), again above 5% (distribution shift).
+**Cost.** Overall recall at 5% FPR falls 0.548 → 0.527 on val (-2.1pp) and 0.589 → 0.558 on test (-3.1pp). Paired bootstrap: −2.1pp [−4.0, −0.2] val (only just excludes 0) and −3.1pp [−4.4, −1.9] test, so the cost is real, though modest. Per group: 50-plus recall −20.0pp [−23.5, −16.4] val, under-50 +6.9pp [+5.1, +8.6]. Test FPR is 6.02% (baseline 6.22%), again above 5% (distribution shift).
 
 **Reading.** Unlike ExpGrad, which enforced fairness on one decision rule and deployed another, reweighing changes the data the single scored model learns from, so the deployed rule is the one that was fixed. Likely mechanism: with age and fraud decoupled in the weighted data, the model stops treating "older" as riskier, so 50-plus recall falls (0.72 → 0.52) and under-50 recall rises (0.46 → 0.53). Jianrong's TreeSHAP audit finds that the frozen proxy share falls by 0.83 percentage points versus baseline; it does not show increased reliance on that proxy set for this fix. Single run, point estimates; no sweep, so the strength of the fix was not tuned.
 
@@ -352,9 +355,9 @@ Status: **done 4 Nov (rule fixed before running).**
 | test | 1 | 0.0671 | 0.5612 | 0.2015 | 0.0815 | 33,779 |
 | test | all | 0.0632 | 0.5646 | 0.1128 | 0.0703 | 205,011 |
 
-**FPR ratio (lower/higher): 1.00 val (exact by construction), 0.93 test** (baseline 0.32 / 0.33). Overall recall 0.548 → 0.536 on val (-1.2pp) and 0.589 → 0.565 on test (-2.5pp); within about 1-2 SE, so a small cost pending Chloe's CIs. Test FPR is 6.32% overall (baseline 6.22%): the cutoffs carry over the same distribution shift.
+**FPR ratio (lower/higher): 1.00 val (exact by construction; no meaningful CI), 0.93 test [0.89, 0.97]** (baseline 0.32 / 0.32). The test interval excludes 1, so parity does not fully carry over to new months. Overall recall 0.548 → 0.536 on val (−1.2pp [−2.9, +0.4], not distinguishable from 0) and 0.589 → 0.565 on test (−2.5pp [−3.6, −1.3], real). Test FPR is 6.32% overall (baseline 6.22%): the cutoffs carry over the same distribution shift.
 
-**Interaction with other criteria (the trade-off).** Equalising FPR leaves recall roughly equal too (0.53 vs 0.56 val) but precision very unequal: a flagged under-50 applicant is fraud 9% of the time, a flagged 50-plus applicant 21%. Flags therefore do not mean the same thing across groups (sufficiency/calibration violated), as the impossibility results predict when base rates differ. Flag rates also differ (5.5% vs 6.2% val), so demographic parity does not hold either.
+**Interaction with other criteria (the trade-off).** Equalising FPR leaves recall roughly equal too (0.53 vs 0.56 val) but precision very unequal: a flagged under-50 applicant is fraud 9% of the time [8.4, 9.9], a flagged 50-plus applicant 21% [18.3, 22.6] (val; test 9.2% vs 20.2%). Reweighing shows almost the same gap (9.2% vs 19.9% val), so this follows from FPR parity itself, not from per-group cutoffs. Flags therefore do not mean the same thing across groups (sufficiency/calibration violated), as the impossibility results predict when base rates differ. Flag rates also differ (5.5% vs 6.2% val), so demographic parity does not hold either.
 
 ## Robustness: shift check and fix (rules fixed 5 Nov 2026, before running)
 
@@ -493,6 +496,67 @@ Notebook: `notebooks/07_jianrong_treeshap.ipynb` · [Report and CSVs in Drive](h
 | ExpGrad 0.01 | `customer_age` +9.92; `phone_home_valid` +0.14; `velocity_4w` +0.08 | `housing_status` −1.81; `device_os` −1.50; `email_is_free` −0.62 |
 
 **Reading and limits.** The 0.05 winner has a small increase in frozen-proxy share while direct-age share falls. Reweighing's frozen-proxy share falls slightly. The overcorrected 0.01 model relies much more on direct age and less on the frozen proxy set. These descriptive shares neither prove nor rule out bias relocation. Correlated features can split SHAP credit and understate proxy use; the single-feature proxy screen can miss joint proxies. The 0.60 proxy cutoff stays frozen. A separately labelled post-freeze sensitivity table for 0.55/0.65/0.70 is in the Drive report.
+
+## Bootstrap CIs (Chloe, 7 Nov 2026)
+
+Notebook: `notebooks/08_chloe_bootstrap_ci.ipynb` · Results: [`models/bootstrap_cis.csv`](https://drive.google.com/drive/folders/1CyFUk2ds5Y5PaQy8SUuiMvpVVjQOS6Uy) in Drive (178 rows; columns `model, split, metric, estimate, lo, hi`). Inputs: the five agreed files in `preds/` (`preds_baseline`, `preds_reweigh`, `preds_groupthr`, `preds_expgrad` = bound 0.05, `preds_expgrad_prelim_0923` = bound 0.01); the `preds_expgrad_db*` sweep files are not used. Nothing in `preds/` or `proxy_set.json` was changed. All point estimates were checked against the numbers above before any CI was used.
+
+**Method.** We report 95% percentile bootstrap confidence intervals (1000 resamples, seed 42) for per-group FPR and recall, the FPR ratio (lower/higher), overall recall, and the share of wrongly rejected honest applicants who are 50-plus, separately on validation (month 5, n = 119,323) and test (months 6–7, n = 205,011). Resampling is over applicants (rows), using each model's **saved decisions**: cutoffs are held fixed and not re-estimated within resamples, so intervals reflect sampling variation in the evaluation set only, not uncertainty from training or threshold selection. Rows are treated as independent, and test months 6 and 7 are pooled. Changes relative to the baseline use a **paired** bootstrap: the same resampled rows are used for the baseline and each fix, and the difference is computed within each resample. The FPR ratio is min/max within each resample, so it stays in [0, 1] when the gap reverses (ExpGrad 0.01).
+
+**Per-group FPR and recall (test).**
+
+| Model | FPR under-50 | FPR 50-plus | FPR ratio | Recall under-50 | Recall 50-plus | Recall overall |
+|---|---|---|---|---|---|---|
+| Baseline | 0.046 [0.046, 0.047] | 0.143 [0.139, 0.147] | 0.32 [0.31, 0.34] | 0.511 [0.488, 0.533] | 0.739 [0.713, 0.765] | 0.589 [0.572, 0.607] |
+| ExpGrad 0.05 | 0.051 [0.050, 0.052] | 0.109 [0.106, 0.112] | 0.47 [0.45, 0.48] | 0.530 [0.509, 0.553] | 0.683 [0.653, 0.710] | 0.582 [0.565, 0.600] |
+| ExpGrad 0.01 | 0.071 [0.070, 0.072] | 0.013 [0.012, 0.015] | 0.19 [0.17, 0.21] | 0.600 [0.579, 0.623] | 0.265 [0.237, 0.293] | 0.485 [0.467, 0.504] |
+| Reweighing | 0.059 [0.058, 0.060] | 0.066 [0.063, 0.068] | 0.90 [0.86, 0.94] | 0.561 [0.539, 0.585] | 0.552 [0.522, 0.581] | 0.558 [0.540, 0.576] |
+| Group thresholds | 0.063 [0.061, 0.064] | 0.067 [0.064, 0.070] | 0.93 [0.89, 0.97] | 0.566 [0.544, 0.589] | 0.561 [0.531, 0.591] | 0.565 [0.547, 0.582] |
+
+Val values for every metric are in the CSV.
+
+**Paired change vs baseline (percentage points; ✓ = CI excludes 0).**
+
+| Fix | Split | FPR ratio | FPR under-50 | FPR 50-plus | Recall under-50 | Recall 50-plus | Recall overall |
+|---|---|---|---|---|---|---|---|
+| ExpGrad 0.05 | val | +0.16 [+0.14, +0.17] ✓ | +0.5 [+0.5, +0.6] ✓ | −2.6 [−2.8, −2.4] ✓ | +2.9 [+1.4, +4.3] ✓ | −5.5 [−7.6, −3.4] ✓ | +0.1 [−1.1, +1.3] |
+| | test | +0.14 [+0.13, +0.15] ✓ | +0.4 [+0.4, +0.5] ✓ | −3.4 [−3.6, −3.2] ✓ | +1.9 [+0.9, +2.9] ✓ | −5.7 [−7.2, −4.2] ✓ | −0.7 [−1.6, +0.2] |
+| ExpGrad 0.01 | val | −0.18 [−0.21, −0.15] ✓ | +2.2 [+2.1, +2.3] ✓ | −10.5 [−10.9, −10.1] ✓ | +8.9 [+7.1, +10.7] ✓ | −51.5 [−56.1, −47.1] ✓ | −11.2 [−13.6, −8.9] ✓ |
+| | test | −0.14 [−0.16, −0.11] ✓ | +2.4 [+2.3, +2.5] ✓ | −13.0 [−13.3, −12.6] ✓ | +9.0 [+7.7, +10.4] ✓ | −47.4 [−50.4, −44.4] ✓ | −10.4 [−12.1, −8.8] ✓ |
+| Reweighing | val | +0.65 [+0.58, +0.68] ✓ | +1.3 [+1.3, +1.4] ✓ | −6.4 [−6.8, −6.1] ✓ | +6.9 [+5.1, +8.6] ✓ | −20.0 [−23.5, −16.4] ✓ | −2.1 [−4.0, −0.2] ✓ |
+| | test | +0.58 [+0.54, +0.61] ✓ | +1.3 [+1.2, +1.3] ✓ | −7.7 [−8.0, −7.5] ✓ | +5.0 [+3.8, +6.3] ✓ | −18.7 [−21.1, −16.3] ✓ | −3.1 [−4.4, −1.9] ✓ |
+| Group thresholds | val | +0.68 [+0.59, +0.68] ✓ | +1.3 [+1.3, +1.4] ✓ | −6.3 [−6.7, −6.0] ✓ | +6.5 [+5.1, +8.1] ✓ | −16.6 [−20.1, −13.3] ✓ | −1.2 [−2.9, +0.4] |
+| | test | +0.61 [+0.58, +0.64] ✓ | +1.6 [+1.5, +1.7] ✓ | −7.6 [−7.9, −7.3] ✓ | +5.6 [+4.6, +6.6] ✓ | −17.8 [−20.1, −15.4] ✓ | −2.5 [−3.6, −1.3] ✓ |
+
+(FPR ratio changes are in ratio units, not pp. The group-thresholds val ratio change is bounded above because the ratio cannot exceed 1; see caveats.)
+
+**Share of wrongly rejected honest applicants who are 50-plus** (50-plus share of honest applicants: 17.2% val, 16.2% test).
+
+| Model | Val | Test |
+|---|---|---|
+| Baseline | 39.0% [37.7, 40.1] | 37.3% [36.5, 38.1] |
+| ExpGrad 0.05 | 30.0% [28.8, 31.2] | 29.3% [28.5, 30.1] |
+| ExpGrad 0.01 | 2.9% [2.4, 3.3] | 3.5% [3.2, 3.8] |
+| Reweighing | 16.8% [15.9, 17.8] | 17.7% [17.1, 18.4] |
+| Group thresholds | 17.2% [16.2, 18.2] | 17.2% [16.5, 17.8] |
+
+**Precision by group (bonus).** Under-50 vs 50-plus, val: group thresholds 9.2% [8.4, 9.9] vs 20.5% [18.3, 22.6]; reweighing 9.2% [8.4, 9.9] vs 19.9% [17.5, 22.0]; baseline 10.7% vs 12.9%. Test is nearly identical (group thresholds 9.2% vs 20.2%). Both FPR-parity fixes produce the same precision gap, as the impossibility results predict when base rates differ.
+
+**Reading.**
+- The baseline gap is real and stable: on test, 50-plus FPR 14.3% [13.9, 14.7] vs under-50 4.6% [4.6, 4.7].
+- Every fix changes the FPR ratio by an amount whose CI excludes 0. ExpGrad 0.05 is a real but partial improvement; ExpGrad 0.01 reverses the gap.
+- With overall val FPR fixed at 5%, the fixes **redistribute** wrongful rejections and fraud detection between groups rather than reducing them: every per-group change above excludes 0, with 50-plus FPR and recall falling and under-50 FPR and recall rising.
+- ExpGrad 0.05's flat overall recall hides a real shift between groups (50-plus −5.7pp, under-50 +1.9pp on test).
+- Reweighing's recall cost is real (test −3.1pp); group thresholds' is real on test (−2.5pp) but not on val.
+- On test, reweighing (0.90) and group thresholds (0.93) have heavily overlapping CIs; they were not compared directly.
+
+**Caveats to state.**
+- All cutoffs were set on validation (month 5), and ExpGrad's bound (0.05) was also selected there by the pre-registered rule, so validation results are in-sample for these choices. Test is the cleaner estimate. In practice ExpGrad 0.05 changed little between splits (FPR ratio 0.48 val, 0.47 test).
+- Group thresholds reach FPR parity on validation **by construction** (ratio 1.000). Because the ratio cannot exceed 1, its bootstrap interval on validation lies below the estimate ([0.924, 0.999]) and should not be read as evidence of fairness. On test the ratio is 0.93 [0.89, 0.97]: close to parity, but the interval excludes 1.
+- Overall test FPR is about 6% for every model, against the 5% target on validation, and every group's FPR is higher on test than on validation. This is consistent with drift across months (L6 s14; L7 s10–12). The CIs describe these months only and do not cover future drift.
+- CIs are not corrected for multiple comparisons across models and metrics. Some results only just exclude zero, for example reweighing's validation recall change (−0.021 [−0.040, −0.002]), or exclude zero on one split only (group thresholds' recall change: test −0.025 [−0.036, −0.013], validation −0.012 [−0.029, 0.004]). Treat these with caution. Some changes are clearly non-zero but very small (ExpGrad 0.05's under-50 FPR: +0.004).
+- Treating applicants as independent ignores repeat applicants and month-to-month variation (L7 s9), so the intervals may be somewhat too narrow.
+- The robustness (Variant II) rows above are not covered; they remain point estimates.
 
 ## Rules
 
